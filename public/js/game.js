@@ -78,8 +78,8 @@ class Game {
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
         this.isJumping = false;
-        this.gravity = 0.08;
-        this.jumpForce = 0.8;
+        this.gravity = 0.05;
+        this.jumpForce = 1.0;
         this.playerHeight = 1;
         this.maxRopeLength = 5;
 
@@ -122,44 +122,66 @@ class Game {
     }
 
     createDecorations() {
-        // Add some trees
-        const treePositions = [
-            { x: 30, z: 30 },
-            { x: -30, z: 30 },
-            { x: 30, z: -30 },
-            { x: -30, z: -30 },
-            { x: 50, z: 0 },
-            { x: -50, z: 0 }
-        ];
+        // Add trees with random positions and sizes
+        const treeCount = 12;
+        const treePositions = [];
+        
+        for (let i = 0; i < treeCount; i++) {
+            const x = (Math.random() - 0.5) * 80;
+            const z = (Math.random() - 0.5) * 80;
+            const scale = 0.8 + Math.random() * 0.4;
+            
+            treePositions.push({ x, z, scale });
+        }
 
         treePositions.forEach(pos => {
             // Tree trunk
             const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.7, 5, 8);
-            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+            const trunkMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x8B4513,
+                roughness: 0.9,
+                metalness: 0.1
+            });
             const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
             trunk.position.set(pos.x, 2.5, pos.z);
+            trunk.scale.set(pos.scale, pos.scale, pos.scale);
             trunk.castShadow = true;
             trunk.receiveShadow = true;
             this.scene.add(trunk);
 
             // Tree top
             const topGeometry = new THREE.ConeGeometry(3, 6, 8);
-            const topMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+            const topMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x228B22,
+                roughness: 0.8,
+                metalness: 0.2
+            });
             const top = new THREE.Mesh(topGeometry, topMaterial);
             top.position.set(pos.x, 7, pos.z);
+            top.scale.set(pos.scale, pos.scale, pos.scale);
             top.castShadow = true;
             top.receiveShadow = true;
             this.scene.add(top);
         });
 
-        // Add some rocks
-        const rockPositions = [
-            { x: 20, z: 20 },
-            { x: -20, z: 20 },
-            { x: 20, z: -20 },
-            { x: -20, z: -20 }
-        ];
+        // Add rocks with collision
+        const rockCount = 15;
+        const rockPositions = [];
+        
+        for (let i = 0; i < rockCount; i++) {
+            const x = (Math.random() - 0.5) * 70;
+            const z = (Math.random() - 0.5) * 70;
+            const scale = 0.5 + Math.random() * 1.5;
+            const rotation = {
+                x: Math.random() * Math.PI,
+                y: Math.random() * Math.PI,
+                z: Math.random() * Math.PI
+            };
+            
+            rockPositions.push({ x, z, scale, rotation });
+        }
 
+        this.rocks = []; // Store rocks for collision detection
         rockPositions.forEach(pos => {
             const rockGeometry = new THREE.DodecahedronGeometry(2, 0);
             const rockMaterial = new THREE.MeshStandardMaterial({ 
@@ -169,10 +191,12 @@ class Game {
             });
             const rock = new THREE.Mesh(rockGeometry, rockMaterial);
             rock.position.set(pos.x, 1, pos.z);
-            rock.rotation.set(Math.random(), Math.random(), Math.random());
+            rock.scale.set(pos.scale, pos.scale, pos.scale);
+            rock.rotation.set(pos.rotation.x, pos.rotation.y, pos.rotation.z);
             rock.castShadow = true;
             rock.receiveShadow = true;
             this.scene.add(rock);
+            this.rocks.push(rock);
         });
     }
 
@@ -181,54 +205,83 @@ class Game {
         const group = new THREE.Group();
         group.userData = { id: playerId || this.socket.id }; // Use provided ID or socket ID
 
+        // Set initial position higher to ensure player starts above ground
+        group.position.set(0, 10, 0);
+
         // Body
-        const bodyGeometry = new THREE.BoxGeometry(1, 1.2, 0.6);
+        const bodyGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.3);
         const bodyMaterial = new THREE.MeshStandardMaterial({ 
             color: color,
             roughness: 0.7,
             metalness: 0.2
         });
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.position.y = 0.8;
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
 
         // Head
-        const headGeometry = new THREE.SphereGeometry(0.4, 32, 32);
+        const headGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.4);
         const headMaterial = new THREE.MeshStandardMaterial({ 
             color: color,
             roughness: 0.7,
             metalness: 0.2
         });
         const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.position.y = 0.8;
+        head.position.y = 1.4;
         head.castShadow = true;
         head.receiveShadow = true;
         group.add(head);
 
-        // Eyes
-        const eyeGeometry = new THREE.SphereGeometry(0.1, 16, 16);
-        const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        
-        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        leftEye.position.set(0.2, 0.9, 0.3);
-        group.add(leftEye);
-        
-        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-        rightEye.position.set(-0.2, 0.9, 0.3);
-        group.add(rightEye);
+        // Arms
+        const armGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+        const armMaterial = new THREE.MeshStandardMaterial({ 
+            color: color,
+            roughness: 0.7,
+            metalness: 0.2
+        });
 
-        // Pupils
-        const pupilGeometry = new THREE.SphereGeometry(0.05, 16, 16);
-        const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
-        
-        const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        leftPupil.position.set(0.2, 0.9, 0.35);
-        group.add(leftPupil);
-        
-        const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-        rightPupil.position.set(-0.2, 0.9, 0.35);
-        group.add(rightPupil);
+        // Left Arm
+        const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+        leftArm.position.set(-0.4, 0.8, 0);
+        leftArm.castShadow = true;
+        leftArm.receiveShadow = true;
+        group.add(leftArm);
+
+        // Right Arm
+        const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+        rightArm.position.set(0.4, 0.8, 0);
+        rightArm.castShadow = true;
+        rightArm.receiveShadow = true;
+        group.add(rightArm);
+
+        // Legs
+        const legGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
+        const legMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x0000ff, // Blue pants
+            roughness: 0.7,
+            metalness: 0.2
+        });
+
+        // Left Leg
+        const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+        leftLeg.position.set(-0.2, 0.3, 0);
+        leftLeg.castShadow = true;
+        leftLeg.receiveShadow = true;
+        group.add(leftLeg);
+
+        // Right Leg
+        const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+        rightLeg.position.set(0.2, 0.3, 0);
+        rightLeg.castShadow = true;
+        rightLeg.receiveShadow = true;
+        group.add(rightLeg);
+
+        // Store references to legs for animation
+        group.userData.leftLeg = leftLeg;
+        group.userData.rightLeg = rightLeg;
+        group.userData.animationTime = 0;
 
         return group;
     }
@@ -241,11 +294,13 @@ class Game {
         const ropeGeometry = new THREE.BufferGeometry();
         const ropeMaterial = new THREE.LineBasicMaterial({ 
             color: 0xffffff,
-            linewidth: 2
+            linewidth: 3,
+            transparent: true,
+            opacity: 0.8
         });
         
         const points = [];
-        for (let i = 0; i <= 10; i++) {
+        for (let i = 0; i <= 20; i++) { // Increased segments for smoother rope
             points.push(new THREE.Vector3(0, 0, 0));
         }
         
@@ -260,19 +315,43 @@ class Game {
             const start = this.player.position.clone();
             const end = this.otherPlayer.position.clone();
             
-            for (let i = 0; i <= 10; i++) {
-                const t = i / 10;
-                const point = new THREE.Vector3();
-                
-                point.x = start.x + (end.x - start.x) * t;
-                point.y = start.y + (end.y - start.y) * t + Math.sin(t * Math.PI) * 0.5;
-                point.z = start.z + (end.z - start.z) * t;
-                
-                points.push(point);
-            }
+            // Calculate rope length
+            const distance = start.distanceTo(end);
             
-            this.rope.geometry.setFromPoints(points);
-            this.rope.geometry.attributes.position.needsUpdate = true;
+            // Show rope if players are within max distance
+            if (distance <= this.maxRopeLength * 1.2) { // Added 20% buffer
+                this.rope.visible = true;
+                
+                // Calculate midpoint for sag
+                const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+                const sagAmount = Math.min(distance * 0.2, 2); // Limit maximum sag
+                midpoint.y -= sagAmount;
+
+                // Generate points with natural curve
+                for (let i = 0; i <= 20; i++) {
+                    const t = i / 20;
+                    const point = new THREE.Vector3();
+                    
+                    // Quadratic Bezier curve for natural rope sag
+                    const t2 = t * t;
+                    const mt = 1 - t;
+                    const mt2 = mt * mt;
+                    
+                    point.x = mt2 * start.x + 2 * mt * t * midpoint.x + t2 * end.x;
+                    point.y = mt2 * start.y + 2 * mt * t * midpoint.y + t2 * end.y;
+                    point.z = mt2 * start.z + 2 * mt * t * midpoint.z + t2 * end.z;
+                    
+                    points.push(point);
+                }
+                
+                this.rope.geometry.setFromPoints(points);
+                this.rope.geometry.attributes.position.needsUpdate = true;
+            } else {
+                this.rope.visible = false;
+            }
+        } else if (this.rope) {
+            // If rope exists but no other player, hide it
+            this.rope.visible = false;
         }
     }
 
@@ -304,7 +383,31 @@ class Game {
 
     jump() {
         if (!this.isJumping) {
+            // Get current movement direction
+            const cameraDirection = new THREE.Vector3();
+            this.camera.getWorldDirection(cameraDirection);
+            cameraDirection.y = 0;
+            cameraDirection.normalize();
+
+            // Apply jump force
             this.velocity.y = this.jumpForce;
+            
+            // Add forward momentum based on current movement direction
+            if (this.keys['w']) {
+                this.velocity.add(cameraDirection.clone().multiplyScalar(0.2));
+            } else if (this.keys['s']) {
+                this.velocity.add(cameraDirection.clone().multiplyScalar(-0.2));
+            }
+            
+            // Add sideways momentum if moving sideways
+            const cameraRight = new THREE.Vector3();
+            cameraRight.crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection);
+            if (this.keys['a']) {
+                this.velocity.add(cameraRight.clone().multiplyScalar(0.2));
+            } else if (this.keys['d']) {
+                this.velocity.add(cameraRight.clone().multiplyScalar(-0.2));
+            }
+
             this.isJumping = true;
         }
     }
@@ -438,47 +541,78 @@ class Game {
             metalness: 0.2
         });
 
-        // Create platforms at different heights and positions
-        const platformPositions = [
-            { x: 5, y: 2, z: -5, width: 3, height: 0.5, depth: 3 },
-            { x: 10, y: 4, z: -8, width: 3, height: 0.5, depth: 3 },
-            { x: 15, y: 6, z: -5, width: 3, height: 0.5, depth: 3 },
-            { x: 20, y: 8, z: -8, width: 3, height: 0.5, depth: 3 },
-            { x: 25, y: 10, z: -5, width: 3, height: 0.5, depth: 3 },
-            // Moving platform
-            { x: 30, y: 12, z: -8, width: 3, height: 0.5, depth: 3, isMoving: true }
+        // Generate structured platform positions
+        const platformPositions = [];
+        
+        // Create a starting area with multiple connected platforms
+        const startPlatforms = [
+            { x: 0, y: 2, z: 0, width: 8, depth: 8 }, // Main starting platform
+            { x: 12, y: 2, z: 0, width: 6, depth: 6 }, // Right platform
+            { x: -12, y: 2, z: 0, width: 6, depth: 6 }, // Left platform
+            { x: 0, y: 2, z: 12, width: 6, depth: 6 }, // Front platform
+            { x: 0, y: 2, z: -12, width: 6, depth: 6 }  // Back platform
         ];
 
+        // Add starting platforms
+        platformPositions.push(...startPlatforms);
+
+        // Generate additional platforms in a more structured way
+        const additionalPlatforms = 8;
+        const directions = [
+            { x: 1, z: 0 },   // Right
+            { x: -1, z: 0 },  // Left
+            { x: 0, z: 1 },   // Forward
+            { x: 0, z: -1 }   // Backward
+        ];
+
+        for (let i = 0; i < additionalPlatforms; i++) {
+            // Get a random existing platform to build from
+            const basePlatform = platformPositions[Math.floor(Math.random() * platformPositions.length)];
+            
+            // Choose a random direction
+            const direction = directions[Math.floor(Math.random() * directions.length)];
+            
+            // Calculate new position with consistent spacing
+            const x = basePlatform.x + (direction.x * 15);
+            const z = basePlatform.z + (direction.z * 15);
+            
+            // Random height variation (but not too extreme)
+            const y = basePlatform.y + (Math.random() - 0.5) * 4;
+            
+            // Random platform size
+            const size = 5 + Math.random() * 3; // Random size between 5 and 8
+            
+            platformPositions.push({
+                x,
+                y: Math.max(2, y), // Ensure minimum height
+                z,
+                width: size,
+                height: 0.5,
+                depth: size
+            });
+        }
+
+        // Create all platforms
         platformPositions.forEach(pos => {
             const geometry = new THREE.BoxGeometry(pos.width, pos.height, pos.depth);
             const platform = new THREE.Mesh(geometry, platformMaterial);
             platform.position.set(pos.x, pos.y, pos.z);
             platform.castShadow = true;
             platform.receiveShadow = true;
-            platform.userData = {
-                isMoving: pos.isMoving || false,
-                originalY: pos.y,
-                moveRange: 2,
-                moveSpeed: 0.02
-            };
             this.scene.add(platform);
             this.platforms.push(platform);
         });
     }
 
     updatePlatforms() {
-        this.platforms.forEach(platform => {
-            if (platform.userData.isMoving) {
-                // Move platform up and down
-                platform.position.y = platform.userData.originalY + 
-                    Math.sin(Date.now() * platform.userData.moveSpeed) * platform.userData.moveRange;
-            }
-        });
+        // No need for platform updates since they're all static now
     }
 
-    checkPlatformCollisions(player) {
+    checkCollisions(player) {
         const playerBox = new THREE.Box3().setFromObject(player);
+        let onPlatform = false;
         
+        // Check platform collisions
         for (const platform of this.platforms) {
             const platformBox = new THREE.Box3().setFromObject(platform);
             
@@ -487,11 +621,69 @@ class Game {
                     player.position.y = platform.position.y + platform.geometry.parameters.height / 2 + this.playerHeight / 2;
                     this.velocity.y = 0;
                     this.isJumping = false;
-                    return true;
+                    onPlatform = true;
                 }
             }
         }
-        return false;
+
+        // Check rock collisions with both vertical and horizontal collision detection
+        for (const rock of this.rocks) {
+            const rockBox = new THREE.Box3().setFromObject(rock);
+            
+            if (playerBox.intersectsBox(rockBox)) {
+                // Calculate the overlap in each direction
+                const overlapX = Math.min(
+                    playerBox.max.x - rockBox.min.x,
+                    rockBox.max.x - playerBox.min.x
+                );
+                const overlapY = Math.min(
+                    playerBox.max.y - rockBox.min.y,
+                    rockBox.max.y - playerBox.min.y
+                );
+                const overlapZ = Math.min(
+                    playerBox.max.z - rockBox.min.z,
+                    rockBox.max.z - playerBox.min.z
+                );
+
+                // Find the minimum overlap direction
+                const minOverlap = Math.min(overlapX, overlapY, overlapZ);
+
+                // Resolve collision based on the minimum overlap direction
+                if (minOverlap === overlapY && player.position.y > rock.position.y) {
+                    // Calculate the actual height of the rock at the player's position
+                    const rockRadius = rock.geometry.parameters.radius * rock.scale.y;
+                    const rockHeight = rock.position.y + rockRadius;
+                    
+                    // Set player position to stand on top of the rock
+                    player.position.y = rockHeight + this.playerHeight / 2;
+                    this.velocity.y = 0;
+                    this.isJumping = false;
+                    onPlatform = true;
+                } else if (minOverlap === overlapX) {
+                    // Horizontal collision in X direction
+                    const newX = player.position.x < rock.position.x ? 
+                        rockBox.min.x - playerBox.max.x + player.position.x :
+                        rockBox.max.x - playerBox.min.x + player.position.x;
+                    // Only update position if the change is significant
+                    if (Math.abs(player.position.x - newX) > 0.01) {
+                        player.position.x = newX;
+                        this.velocity.x = 0;
+                    }
+                } else if (minOverlap === overlapZ) {
+                    // Horizontal collision in Z direction
+                    const newZ = player.position.z < rock.position.z ?
+                        rockBox.min.z - playerBox.max.z + player.position.z :
+                        rockBox.max.z - playerBox.min.z + player.position.z;
+                    // Only update position if the change is significant
+                    if (Math.abs(player.position.z - newZ) > 0.01) {
+                        player.position.z = newZ;
+                        this.velocity.z = 0;
+                    }
+                }
+            }
+        }
+
+        return onPlatform;
     }
 
     setupMouseControls() {
@@ -562,30 +754,81 @@ class Game {
         const cameraRight = new THREE.Vector3();
         cameraRight.crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection);
 
+        // Check if player is moving
+        let isMoving = false;
+
         // Handle movement
         if (this.keys['w']) {
             this.velocity.add(cameraDirection.clone().multiplyScalar(speed));
+            isMoving = true;
         }
         if (this.keys['s']) {
             this.velocity.add(cameraDirection.clone().multiplyScalar(-speed));
+            isMoving = true;
         }
         if (this.keys['a']) {
             this.velocity.add(cameraRight.clone().multiplyScalar(speed));
+            isMoving = true;
         }
         if (this.keys['d']) {
             this.velocity.add(cameraRight.clone().multiplyScalar(-speed));
+            isMoving = true;
+        }
+
+        // Update leg animation
+        if (this.player) {
+            this.player.userData.animationTime += 0.1;
+            
+            if (isMoving && !this.isJumping) {
+                // Animate legs
+                const leftLeg = this.player.userData.leftLeg;
+                const rightLeg = this.player.userData.rightLeg;
+                
+                // Simple walking animation
+                leftLeg.rotation.x = Math.sin(this.player.userData.animationTime) * 0.5;
+                rightLeg.rotation.x = Math.sin(this.player.userData.animationTime + Math.PI) * 0.5;
+            } else {
+                // Reset leg positions when not moving
+                const leftLeg = this.player.userData.leftLeg;
+                const rightLeg = this.player.userData.rightLeg;
+                leftLeg.rotation.x = 0;
+                rightLeg.rotation.x = 0;
+            }
         }
 
         // Apply gravity
         this.velocity.y -= this.gravity;
+
+        // Store previous position for collision resolution
+        const previousPosition = this.player.position.clone();
 
         // Update position
         this.player.position.x += this.velocity.x;
         this.player.position.y += this.velocity.y;
         this.player.position.z += this.velocity.z;
 
-        // Check platform collisions
-        const onPlatform = this.checkPlatformCollisions(this.player);
+        // Check collisions
+        const onPlatform = this.checkCollisions(this.player);
+
+        // If we're not on a platform and falling, check if we're about to land on one
+        if (!onPlatform && this.velocity.y < 0) {
+            // Create a ray from the player's position pointing downward
+            const rayStart = this.player.position.clone();
+            const rayEnd = rayStart.clone();
+            rayEnd.y -= 2; // Check 2 units below the player
+
+            // Check for platforms below
+            for (const platform of this.platforms) {
+                const platformBox = new THREE.Box3().setFromObject(platform);
+                if (platformBox.containsPoint(rayEnd)) {
+                    // We're about to land on a platform
+                    this.player.position.y = platform.position.y + platform.geometry.parameters.height / 2 + this.playerHeight / 2;
+                    this.velocity.y = 0;
+                    this.isJumping = false;
+                    break;
+                }
+            }
+        }
 
         // Ground collision
         if (!onPlatform && this.player.position.y <= this.playerHeight / 2) {
@@ -604,7 +847,12 @@ class Game {
 
         const cameraOffset = new THREE.Vector3(0, this.cameraHeight, this.cameraDistance);
         cameraOffset.applyQuaternion(this.camera.quaternion);
-        this.camera.position.copy(targetPosition).add(cameraOffset);
+        
+        // Ensure camera position is valid before applying
+        const newCameraPosition = targetPosition.clone().add(cameraOffset);
+        if (isFinite(newCameraPosition.x) && isFinite(newCameraPosition.y) && isFinite(newCameraPosition.z)) {
+            this.camera.position.copy(newCameraPosition);
+        }
 
         // Send position update to server
         if (this.roomCode) {
@@ -618,7 +866,6 @@ class Game {
                 y: this.player.rotation.y,
                 z: this.player.rotation.z
             };
-            console.log('Sending position update:', position);
             this.socket.emit('playerMove', {
                 roomCode: this.roomCode,
                 position: position,
@@ -638,8 +885,10 @@ class Game {
                 
                 const correction = (distance - this.maxRopeLength) * 0.5;
                 
-                this.player.position.add(direction.clone().multiplyScalar(correction));
-                this.otherPlayer.position.sub(direction.clone().multiplyScalar(correction));
+                // Apply correction more smoothly
+                const correctionVector = direction.clone().multiplyScalar(correction);
+                this.player.position.add(correctionVector);
+                this.otherPlayer.position.sub(correctionVector);
             }
         }
     }
