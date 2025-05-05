@@ -206,82 +206,56 @@ class Game {
         group.userData = { id: playerId || this.socket.id }; // Use provided ID or socket ID
 
         // Set initial position higher to ensure player starts above ground
-        group.position.set(0, 10, 0);
+        group.position.set(0, 10, 0); // Increased Y position to 10
 
         // Body
-        const bodyGeometry = new THREE.BoxGeometry(0.6, 0.8, 0.3);
+        const bodyGeometry = new THREE.BoxGeometry(1, 1.2, 0.6);
         const bodyMaterial = new THREE.MeshStandardMaterial({ 
             color: color,
             roughness: 0.7,
             metalness: 0.2
         });
         const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-        body.position.y = 0.8;
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
 
         // Head
-        const headGeometry = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+        const headGeometry = new THREE.SphereGeometry(0.4, 32, 32);
         const headMaterial = new THREE.MeshStandardMaterial({ 
             color: color,
             roughness: 0.7,
             metalness: 0.2
         });
         const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.position.y = 1.4;
+        head.position.y = 0.8;
         head.castShadow = true;
         head.receiveShadow = true;
         group.add(head);
 
-        // Arms
-        const armGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
-        const armMaterial = new THREE.MeshStandardMaterial({ 
-            color: color,
-            roughness: 0.7,
-            metalness: 0.2
-        });
+        // Eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+        const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        
+        const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        leftEye.position.set(0.2, 0.9, 0.3);
+        group.add(leftEye);
+        
+        const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        rightEye.position.set(-0.2, 0.9, 0.3);
+        group.add(rightEye);
 
-        // Left Arm
-        const leftArm = new THREE.Mesh(armGeometry, armMaterial);
-        leftArm.position.set(-0.4, 0.8, 0);
-        leftArm.castShadow = true;
-        leftArm.receiveShadow = true;
-        group.add(leftArm);
-
-        // Right Arm
-        const rightArm = new THREE.Mesh(armGeometry, armMaterial);
-        rightArm.position.set(0.4, 0.8, 0);
-        rightArm.castShadow = true;
-        rightArm.receiveShadow = true;
-        group.add(rightArm);
-
-        // Legs
-        const legGeometry = new THREE.BoxGeometry(0.2, 0.6, 0.2);
-        const legMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x0000ff, // Blue pants
-            roughness: 0.7,
-            metalness: 0.2
-        });
-
-        // Left Leg
-        const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
-        leftLeg.position.set(-0.2, 0.3, 0);
-        leftLeg.castShadow = true;
-        leftLeg.receiveShadow = true;
-        group.add(leftLeg);
-
-        // Right Leg
-        const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
-        rightLeg.position.set(0.2, 0.3, 0);
-        rightLeg.castShadow = true;
-        rightLeg.receiveShadow = true;
-        group.add(rightLeg);
-
-        // Store references to legs for animation
-        group.userData.leftLeg = leftLeg;
-        group.userData.rightLeg = rightLeg;
-        group.userData.animationTime = 0;
+        // Pupils
+        const pupilGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
+        
+        const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        leftPupil.position.set(0.2, 0.9, 0.35);
+        group.add(leftPupil);
+        
+        const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        rightPupil.position.set(-0.2, 0.9, 0.35);
+        group.add(rightPupil);
 
         return group;
     }
@@ -294,13 +268,11 @@ class Game {
         const ropeGeometry = new THREE.BufferGeometry();
         const ropeMaterial = new THREE.LineBasicMaterial({ 
             color: 0xffffff,
-            linewidth: 3,
-            transparent: true,
-            opacity: 0.8
+            linewidth: 2
         });
         
         const points = [];
-        for (let i = 0; i <= 20; i++) { // Increased segments for smoother rope
+        for (let i = 0; i <= 10; i++) {
             points.push(new THREE.Vector3(0, 0, 0));
         }
         
@@ -315,43 +287,19 @@ class Game {
             const start = this.player.position.clone();
             const end = this.otherPlayer.position.clone();
             
-            // Calculate rope length
-            const distance = start.distanceTo(end);
-            
-            // Show rope if players are within max distance
-            if (distance <= this.maxRopeLength * 1.2) { // Added 20% buffer
-                this.rope.visible = true;
+            for (let i = 0; i <= 10; i++) {
+                const t = i / 10;
+                const point = new THREE.Vector3();
                 
-                // Calculate midpoint for sag
-                const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-                const sagAmount = Math.min(distance * 0.2, 2); // Limit maximum sag
-                midpoint.y -= sagAmount;
-
-                // Generate points with natural curve
-                for (let i = 0; i <= 20; i++) {
-                    const t = i / 20;
-                    const point = new THREE.Vector3();
-                    
-                    // Quadratic Bezier curve for natural rope sag
-                    const t2 = t * t;
-                    const mt = 1 - t;
-                    const mt2 = mt * mt;
-                    
-                    point.x = mt2 * start.x + 2 * mt * t * midpoint.x + t2 * end.x;
-                    point.y = mt2 * start.y + 2 * mt * t * midpoint.y + t2 * end.y;
-                    point.z = mt2 * start.z + 2 * mt * t * midpoint.z + t2 * end.z;
-                    
-                    points.push(point);
-                }
+                point.x = start.x + (end.x - start.x) * t;
+                point.y = start.y + (end.y - start.y) * t + Math.sin(t * Math.PI) * 0.5;
+                point.z = start.z + (end.z - start.z) * t;
                 
-                this.rope.geometry.setFromPoints(points);
-                this.rope.geometry.attributes.position.needsUpdate = true;
-            } else {
-                this.rope.visible = false;
+                points.push(point);
             }
-        } else if (this.rope) {
-            // If rope exists but no other player, hide it
-            this.rope.visible = false;
+            
+            this.rope.geometry.setFromPoints(points);
+            this.rope.geometry.attributes.position.needsUpdate = true;
         }
     }
 
@@ -754,46 +702,18 @@ class Game {
         const cameraRight = new THREE.Vector3();
         cameraRight.crossVectors(new THREE.Vector3(0, 1, 0), cameraDirection);
 
-        // Check if player is moving
-        let isMoving = false;
-
         // Handle movement
         if (this.keys['w']) {
             this.velocity.add(cameraDirection.clone().multiplyScalar(speed));
-            isMoving = true;
         }
         if (this.keys['s']) {
             this.velocity.add(cameraDirection.clone().multiplyScalar(-speed));
-            isMoving = true;
         }
         if (this.keys['a']) {
             this.velocity.add(cameraRight.clone().multiplyScalar(speed));
-            isMoving = true;
         }
         if (this.keys['d']) {
             this.velocity.add(cameraRight.clone().multiplyScalar(-speed));
-            isMoving = true;
-        }
-
-        // Update leg animation
-        if (this.player) {
-            this.player.userData.animationTime += 0.1;
-            
-            if (isMoving && !this.isJumping) {
-                // Animate legs
-                const leftLeg = this.player.userData.leftLeg;
-                const rightLeg = this.player.userData.rightLeg;
-                
-                // Simple walking animation
-                leftLeg.rotation.x = Math.sin(this.player.userData.animationTime) * 0.5;
-                rightLeg.rotation.x = Math.sin(this.player.userData.animationTime + Math.PI) * 0.5;
-            } else {
-                // Reset leg positions when not moving
-                const leftLeg = this.player.userData.leftLeg;
-                const rightLeg = this.player.userData.rightLeg;
-                leftLeg.rotation.x = 0;
-                rightLeg.rotation.x = 0;
-            }
         }
 
         // Apply gravity
@@ -885,10 +805,8 @@ class Game {
                 
                 const correction = (distance - this.maxRopeLength) * 0.5;
                 
-                // Apply correction more smoothly
-                const correctionVector = direction.clone().multiplyScalar(correction);
-                this.player.position.add(correctionVector);
-                this.otherPlayer.position.sub(correctionVector);
+                this.player.position.add(direction.clone().multiplyScalar(correction));
+                this.otherPlayer.position.sub(direction.clone().multiplyScalar(correction));
             }
         }
     }
